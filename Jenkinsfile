@@ -98,6 +98,7 @@ pipeline {
         TAG = "${BUILD_NUMBER}" 
         LAUNCH_TEMPLATE_NAME = "my-app-launch-template"
         ASG_NAME = "my-app-asg"
+        PATH = "/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin"
     }
 
     options {
