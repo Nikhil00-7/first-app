@@ -114,19 +114,22 @@ pipeline {
     stages{
         stage("checkout code"){
             steps{
-                git branch: 'main' ,url: ''
+                git branch: 'main' ,url: 'https://github.com/Nikhil00-7/first-app.git'
             }
         }
 
         stage("Pre check"){
             steps{
                 script{
-                    if(!fileExists("Dockerfile")){
-                        error("Docker file not found in the repository")
-                    }
-                    if(!fileExists("package.json")){
-                        error("Package.json file not found")
-                    }
+
+                    def files = ['Dockerfile' , 'package.json']
+                      files.each {file -> 
+                        if (!fileExists){
+                        error("All file must required")
+                        }
+                      }
+                      echo "All file is present"
+                      }
                 }
             }
         }
