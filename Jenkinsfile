@@ -18,7 +18,7 @@ pipeline {
     agent any 
 
     tools {
-        nodejs 'nodejs'   // Change to your actual NodeJS tool name configured in Jenkins
+        nodejs 'node22'   // Change to your actual NodeJS tool name configured in Jenkins
     }
 
     environment {
