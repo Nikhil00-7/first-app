@@ -121,17 +121,16 @@ pipeline {
         stage("Pre check"){
             steps{
                 script{
-
-                    def files = ['Dockerfile' , 'package.json']
-                      files.each {file -> 
-                        if (!fileExists){
-                        error("All file must required")
+                    def files = ['Dockerfile', 'package.json', 'app.js', 'server.js']
+                    files.each { file ->
+                        if (!fileExists(file)){
+                            error("Required file '${file}' not found")
                         }
-                      }
-                      echo "All file is present"
-                      }
+                    }
+                    echo "✓ All required files are present"
                 }
             }
+        }
         }
 
         stage("install dependency"){
@@ -323,30 +322,30 @@ pipeline {
         success {
             echo "Pipeline completed successfully! Application deployed to EC2 Auto Scaling Group."
             emailext(
-                 subject: "SUCCESS: ${env.JOB_NAME} #${env.BUILD_NUMBER}",
+                subject: "SUCCESS: ${env.JOB_NAME} #${env.BUILD_NUMBER}",
                 body: """
-                  project is deployed successfully 
+                Project deployed successfully!
 
                 Job:      ${env.JOB_NAME}
                 Build:    #${env.BUILD_NUMBER}
-                URL:      ${env.BUILD_URL}         
+                URL:      ${env.BUILD_URL}
                 """,
-                to: "kujurnikhil0007@gmail.com" 
+                to: "kujurnikhil0007@gmail.com"
             )
         }
         failure {
             echo "Pipeline failed! Check the logs for details."
-
-               subject: "FAILURE: ${env.JOB_NAME} #${env.BUILD_NUMBER}",
+            emailext(
+                subject: "FAILURE: ${env.JOB_NAME} #${env.BUILD_NUMBER}",
                 body: """
-                Failed to deploy application 
+                Failed to deploy application!
 
                 Job:   ${env.JOB_NAME}
                 Build: #${env.BUILD_NUMBER}
                 URL:   ${env.BUILD_URL}
-
                 """,
                 to: "kujurnikhil0007@gmail.com"
+            )
         }
     }
 }
