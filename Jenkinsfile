@@ -275,8 +275,7 @@ pipeline {
                 }
             }
         }
-    }
-}
+
         stage("cleanup") {
             steps {
                 sh """
@@ -316,6 +315,7 @@ pipeline {
                 }
             }
         }
+    }
     }
 
     post {
