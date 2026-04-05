@@ -79,7 +79,7 @@ pipeline {
                 expression { !params.SKIP_TEST && !params.SKIP_BUILD }
             }
             parallel {
-                failFast: true
+              
 
                 stage("code quality test / lint") {
                     steps {
