@@ -1,4 +1,3 @@
-
 def retryWithDelay(Closure body, int max_retries, int delay) {
     for(int attempts = 1; attempts <= max_retries; attempts++) {
         try {
@@ -21,7 +20,7 @@ pipeline {
     agent any 
 
     tools {
-        node 'nodejs'
+        node 'node22'
     }
 
     environment {
@@ -71,7 +70,6 @@ pipeline {
 
         stage("install dependency"){
             steps{
-    
                 sh "npm install"
             }
         }
@@ -156,57 +154,59 @@ pipeline {
         }
 
        stage("Deploy to EC2") {
-    steps {
-        script {
-            def region = env.REGION
-            def asgName = env.ASG_NAME
+            steps {
+                script {
+                    def region = env.REGION
+                    def asgName = env.ASG_NAME
 
-            def currentCapacity = sh(script: """
-                aws autoscaling describe-auto-scaling-groups \
-                  --auto-scaling-group-names ${asgName} \
-                  --query 'AutoScalingGroups[0].DesiredCapacity' \
-                  --output text \
-                  --region ${region}
-            """, returnStdout: true).trim().toInteger()
+                    def currentCapacity = sh(script: """
+                        aws autoscaling describe-auto-scaling-groups \
+                          --auto-scaling-group-names ${asgName} \
+                          --query 'AutoScalingGroups[0].DesiredCapacity' \
+                          --output text \
+                          --region ${region}
+                    """, returnStdout: true).trim().toInteger()
 
-            echo "Current ASG capacity: ${currentCapacity}"
+                    echo "Current ASG capacity: ${currentCapacity}"
 
-            if (currentCapacity == 0) {
-                echo "First deployment — scaling up ASG to 2..."
-                sh """
-                aws autoscaling set-desired-capacity \
-                  --auto-scaling-group-name ${asgName} \
-                  --desired-capacity 2 \
-                  --region ${region}
-                """
-            } else {
-                echo "Rolling update — starting instance refresh..."
-                sh """
-                aws autoscaling start-instance-refresh \
-                  --auto-scaling-group-name ${asgName} \
-                  --strategy Rolling \
-                  --preferences '{"MinHealthyPercentage": 50, "InstanceWarmup": 120}' \
-                  --region ${region}
-                """
+                    if (currentCapacity == 0) {
+                        echo "First deployment — scaling up ASG to 2..."
+                        sh """
+                        aws autoscaling set-desired-capacity \
+                          --auto-scaling-group-name ${asgName} \
+                          --desired-capacity 2 \
+                          --region ${region}
+                        """
+                    } else {
+                        echo "Rolling update — starting instance refresh..."
+                        sh """
+                        aws autoscaling start-instance-refresh \
+                          --auto-scaling-group-name ${asgName} \
+                          --strategy Rolling \
+                          --preferences '{"MinHealthyPercentage": 50, "InstanceWarmup": 120}' \
+                          --region ${region}
+                        """
 
 
-                timeout(time: 15, unit: 'MINUTES') {
-                    waitUntil(initialRecurrencePeriod: 30000) {
-                        def refreshStatus = sh(script: """
-                            aws autoscaling describe-instance-refreshes \
-                              --auto-scaling-group-name ${asgName} \
-                              --region ${region} \
-                              --query 'InstanceRefreshes[0].Status' \
-                              --output text
-                        """, returnStdout: true).trim()
+                        timeout(time: 15, unit: 'MINUTES') {
+                            waitUntil(initialRecurrencePeriod: 30000) {
+                                def refreshStatus = sh(script: """
+                                    aws autoscaling describe-instance-refreshes \
+                                      --auto-scaling-group-name ${asgName} \
+                                      --region ${region} \
+                                      --query 'InstanceRefreshes[0].Status' \
+                                      --output text
+                                """, returnStdout: true).trim()
 
-                        echo "Instance refresh status: ${refreshStatus}"
+                                echo "Instance refresh status: ${refreshStatus}"
 
-                        if (refreshStatus == "Failed" || refreshStatus == "Cancelled") {
-                            error("Instance refresh ${refreshStatus} — deployment aborted")
+                                if (refreshStatus == "Failed" || refreshStatus == "Cancelled") {
+                                    error("Instance refresh ${refreshStatus} — deployment aborted")
+                                }
+
+                                return refreshStatus == "Successful"
+                            }
                         }
-
-                        return refreshStatus == "Successful"
                     }
                 }
             }
