@@ -131,7 +131,6 @@ pipeline {
                 }
             }
         }
-        }
 
         stage("install dependency"){
             steps{
