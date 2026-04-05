@@ -62,19 +62,19 @@
 //
 // echo "Deployment successful and running on port 3000"
 
-def retryWithDelay (closure body , int  max_retries , int delay){
-    for(int attempts = 1 ; attempts<= max_retries ; attempts++){
-        try{
-          body()
-          return
-        }catch(Exception e){
-          echo "Attempts ${attempts}/${max_retries}  failed"
+def retryWithDelay(Closure body, int max_retries, int delay) {
+    for(int attempts = 1; attempts <= max_retries; attempts++) {
+        try {
+            body()
+            return
+        } catch(Exception e) {
+            echo "Attempts ${attempts}/${max_retries} failed"
 
-          if(attempts == max_retries){
-            error("failed to build after ${max_retries}")
-          }
-          echo "waiting ${delay} seconds for next retry...."
-          sleep(time: delay , unit:"SECONDS")
+            if(attempts == max_retries) {
+                error("failed to build after ${max_retries}")
+            }
+            echo "waiting ${delay} seconds for next retry...."
+            sleep(time: delay, unit: "SECONDS")
         }
     }
 }
