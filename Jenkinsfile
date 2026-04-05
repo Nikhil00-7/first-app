@@ -20,7 +20,7 @@ pipeline {
     agent any 
 
     tools {
-        node 'node22'
+        nodejs 'node22'
     }
 
     environment {
@@ -79,7 +79,7 @@ pipeline {
                 expression { !params.SKIP_TEST && !params.SKIP_BUILD }
             }
             parallel {
-                failFast true
+                failFast: true
 
                 stage("code quality test / lint") {
                     steps {
