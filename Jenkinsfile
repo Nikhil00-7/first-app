@@ -295,7 +295,7 @@ pipeline {
                                 aws autoscaling describe-auto-scaling-groups \
                                   --auto-scaling-group-names ${ASG_NAME} \
                                   --region ${REGION} \
-                                  --query 'AutoScalingGroups[0].Instances[?HealthStatus==\`Healthy\`].InstanceId' \
+                                  --query 'AutoScalingGroups[0].Instances[?HealthStatus==`Healthy`].InstanceId' \
                                   --output text | wc -w
                             """, returnStdout: true).trim().toInteger()
 
