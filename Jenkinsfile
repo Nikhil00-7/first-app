@@ -112,6 +112,9 @@ pipeline {
         }
 
         stage("Scan image for vulnerabilitie"){
+            when {
+                expression { false }  // Disabled - Trivy image not available. Enable when needed.
+            }
             steps{
              retryWithDelay({
                 sh """ 
