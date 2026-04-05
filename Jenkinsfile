@@ -25,8 +25,8 @@ pipeline {
     }
 
     environment {
-        AWS_ACCESS_KEY_ID = credentials('aws-credentials-id')
-        AWS_SECRET_ACCESS_KEY = credentials('aws-credentials-id')
+        AWS_ACCESS_KEY_ID = credentials('aws-credentials')
+        AWS_SECRET_ACCESS_KEY = credentials('aws-credentials')
         REGION = 'us-east-1'
         MAX_RETRIES = "3"
         DELAY_RETRIES = "5"
