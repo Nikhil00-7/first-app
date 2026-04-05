@@ -26,6 +26,11 @@ app.use(limiter);
 // Routes
 app.use('/api/todos', todoRoutes);
 
+// Root endpoint for load balancer health checks
+app.get('/', (req, res) => {
+  res.status(200).json({ status: 'ok', service: 'Todo API' });
+});
+
 // Health check
 app.get('/health', (req, res) => {
   res.json({ status: 'healthy', message: 'Todo API is running' });
