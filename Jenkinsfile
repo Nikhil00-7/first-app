@@ -40,7 +40,7 @@ pipeline {
     options {
         buildDiscarder(logRotator(numToKeepStr: '10'))
         timestamps()
-        timeout(time: 30 , units: "MINUTES")
+        timeout(time: 30 , unit: "MINUTES")
     }
      parameters {
           booleanParam(name: "SKIP_TEST", defaultValue: false, description: "skipping test stage")
