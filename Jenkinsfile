@@ -1,63 +1,66 @@
+
 def retryWithDelay(Closure body, int max_retries, int delay) {
     for(int attempts = 1; attempts <= max_retries; attempts++) {
         try {
             body()
             return
         } catch(Exception e) {
-            echo "Attempt ${attempts}/${max_retries} failed: ${e.message}"
+            echo "Attempts ${attempts}/${max_retries} failed"
+
             if(attempts == max_retries) {
-                error("Failed after ${max_retries} attempts")
+                error("failed to build after ${max_retries}")
             }
-            echo "Waiting ${delay} seconds before retry..."
+            echo "waiting ${delay} seconds for next retry...."
             sleep(time: delay, unit: "SECONDS")
         }
     }
 }
 
 pipeline {
+
     agent any 
 
     tools {
-        nodejs 'node22'   // Change to your actual NodeJS tool name configured in Jenkins
+        node 'nodejs'
     }
 
     environment {
-        AWS_ACCESS_KEY_ID     = credentials('aws-access-key')
-        AWS_SECRET_ACCESS_KEY = credentials('aws-secret-key')
-        REGION                = 'us-east-1'
-        MAX_RETRIES           = 3
-        DELAY_RETRIES         = 5
-        IMAGE_NAME            = "my-ecr-repository"   // Make sure this matches your ECR repo
-        ACCOUNT_ID            = "225387892229"
-        TAG                   = "${BUILD_NUMBER}"
-        ASG_NAME              = "my-app-asg"
-        PATH                  = "/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin"
+        AWS_ACCESS_KEY_ID = credentials('aws-credentials-id')
+        AWS_SECRET_ACCESS_KEY = credentials('aws-credentials-id')
+        REGION = 'us-east-1'
+        MAX_RETRIES = "3"
+        DELAY_RETRIES = "5"
+        IMAGE_NAME = "my-ecr-repository"
+        ACCOUNT_ID = "225387892229"
+        TAG = "${BUILD_NUMBER}" 
+        LAUNCH_TEMPLATE_NAME = "my-app-launch-template"
+        ASG_NAME = "my-app-asg"
+        PATH = "/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin"
     }
 
     options {
         buildDiscarder(logRotator(numToKeepStr: '10'))
         timestamps()
-        timeout(time: 30, unit: 'MINUTES')
+        timeout(time: 30 , units: "MINUTES")
     }
+     parameters {
+          booleanParam(name: "SKIP_TEST", defaultValue: false, description: "skipping test stage")
+          booleanParam(name: "SKIP_BUILD", defaultValue: false, description: "skipping build stage")
+     }
 
-    parameters {
-        booleanParam(name: "SKIP_TEST", defaultValue: false, description: "Skip test stage")
-        booleanParam(name: "SKIP_BUILD", defaultValue: false, description: "Skip build stage")
-    }
-
-    stages {
-        stage("Checkout Code") {
-            steps {
-                git branch: 'main', url: 'https://github.com/Nikhil00-7/first-app.git'
+    stages{
+        stage("checkout code"){
+            steps{
+                git branch: 'main' ,url: 'https://github.com/Nikhil00-7/first-app.git'
             }
         }
 
-        stage("Pre Check") {
-            steps {
-                script {
-                    def files = ['Dockerfile', 'package.json', 'server.js']
+        stage("Pre check"){
+            steps{
+                script{
+                    def files = ['Dockerfile', 'package.json', 'app.js', 'server.js']
                     files.each { file ->
-                        if (!fileExists(file)) {
+                        if (!fileExists(file)){
                             error("Required file '${file}' not found")
                         }
                     }
@@ -66,126 +69,164 @@ pipeline {
             }
         }
 
-        stage("Install Dependencies") {
-            steps {
+        stage("install dependency"){
+            steps{
+    
                 sh "npm install"
             }
         }
 
-        stage("Parallel: Lint, Test & Build") {
+        stage("Parallel stages") {
             when {
                 expression { !params.SKIP_TEST && !params.SKIP_BUILD }
             }
             parallel {
-                stage("Code Quality / Lint") {
-                    steps { sh "npm run lint || echo 'Lint skipped or no lint script'" }
+                failFast true
+
+                stage("code quality test / lint") {
+                    steps {
+                        sh "npm run lint"
+                    }
                 }
-                stage("Run Tests") {
-                    steps { sh "npm test || echo 'No tests found'" }
+
+                stage("run test") {
+                    steps {
+                        sh "npm test"
+                    }
                 }
-                stage("Build") {
-                    steps { sh "npm run build || echo 'No build step'" }
-                }
-            }
-        }
 
-        stage("Docker Build") {
-            steps {
-                retryWithDelay({ 
-                    sh "docker build -t ${IMAGE_NAME}:${TAG} ."
-                }, env.MAX_RETRIES.toInteger(), env.DELAY_RETRIES.toInteger())
-            }
-        }
-
-        stage("Scan Image with Trivy") {
-            steps {
-                retryWithDelay({
-                    sh """
-                    docker run --rm aquasec/trivy image \
-                      --exit-code 0 \
-                      --severity HIGH,CRITICAL \
-                      --timeout 5m \
-                      ${IMAGE_NAME}:${TAG}
-                    """
-                }, env.MAX_RETRIES.toInteger(), env.DELAY_RETRIES.toInteger())
-            }
-        }
-
-        stage("ECR Login") {
-            steps {
-                retryWithDelay({
-                    sh """
-                    aws ecr get-login-password --region ${REGION} | \
-                    docker login --username AWS --password-stdin ${ACCOUNT_ID}.dkr.ecr.${REGION}.amazonaws.com
-                    """
-                }, env.MAX_RETRIES.toInteger(), env.DELAY_RETRIES.toInteger())
-            }
-        }
-
-        stage("Push to ECR") {
-            steps {
-                retryWithDelay({
-                    sh """
-                    docker tag ${IMAGE_NAME}:${TAG} ${ACCOUNT_ID}.dkr.ecr.${REGION}.amazonaws.com/${IMAGE_NAME}:${TAG}
-                    docker tag ${IMAGE_NAME}:${TAG} ${ACCOUNT_ID}.dkr.ecr.${REGION}.amazonaws.com/${IMAGE_NAME}:latest
-
-                    docker push ${ACCOUNT_ID}.dkr.ecr.${REGION}.amazonaws.com/${IMAGE_NAME}:${TAG}
-                    docker push ${ACCOUNT_ID}.dkr.ecr.${REGION}.amazonaws.com/${IMAGE_NAME}:latest
-                    """
-                }, env.MAX_RETRIES.toInteger(), env.DELAY_RETRIES.toInteger())
-            }
-        }
-
-        // === Deployment Stage ===
-        stage("Deploy to ASG") {
-            steps {
-                script {
-                    def region = env.REGION
-                    def asgName = env.ASG_NAME
-
-                    echo "Triggering rolling update via Instance Refresh..."
-
-                    sh """
-                    aws autoscaling start-instance-refresh \
-                      --auto-scaling-group-name ${asgName} \
-                      --strategy Rolling \
-                      --preferences '{
-                        "MinHealthyPercentage": 50,
-                        "InstanceWarmup": 120
-                      }' \
-                      --region ${region}
-                    """
-                }
-            }
-        }
-
-        stage("Wait for Instance Refresh") {
-            steps {
-                timeout(time: 20, unit: 'MINUTES') {
-                    script {
-                        waitUntil {
-                            def status = sh(script: """
-                                aws autoscaling describe-instance-refreshes \
-                                  --auto-scaling-group-name ${ASG_NAME} \
-                                  --region ${REGION} \
-                                  --query 'InstanceRefreshes[0].Status' \
-                                  --output text
-                            """, returnStdout: true).trim()
-
-                            echo "Current Instance Refresh Status: ${status}"
-                            return status == "Successful"
-                        }
+                stage("build") {
+                    steps {
+                        sh "npm run build"
                     }
                 }
             }
         }
 
-        stage("Verify Healthy Instances") {
+        stage("docker build"){
+            steps{
+                script{
+                    retryWithDelay({
+                        sh "docker build -t ${IMAGE_NAME}:${BUILD_NUMBER} ."
+                    },env.MAX_RETRIES.toInteger(), env.DELAY_RETRIES.toInteger())
+                }
+            }
+        }
+
+        stage("Scan image for vulnerabilitie"){
+            steps{
+             retryWithDelay({
+                sh """ 
+                docker run --rm \
+                  aquasec/trivy image \
+                  --exit-code 0 \
+                  --severity HIGH,CRITICAL \
+                  --timeout 5m \
+                  --format table \
+                ${IMAGE_NAME}:${BUILD_NUMBER}
+                """
+                }, env.MAX_RETRIES.toInteger(), env.DELAY_RETRIES.toInteger())  
+             }
+        }
+
+        stage("ECR Login") {
+            steps {
+              retryWithDelay({
+                  sh """
+                  aws ecr get-login-password --region ${REGION} | \
+                   docker login --username AWS --password-stdin ${ACCOUNT_ID}.dkr.ecr.${REGION}.amazonaws.com
+                  """
+              }, env.MAX_RETRIES.toInteger(), env.DELAY_RETRIES.toInteger())
+            }
+        }
+        stage("Push to ECR"){
+            steps{
+                retryWithDelay({
+                    sh """
+                    # Tag with build number and latest
+                    docker tag ${IMAGE_NAME}:${BUILD_NUMBER} ${ACCOUNT_ID}.dkr.ecr.${REGION}.amazonaws.com/${IMAGE_NAME}:${BUILD_NUMBER}
+                    docker tag ${IMAGE_NAME}:${BUILD_NUMBER} ${ACCOUNT_ID}.dkr.ecr.${REGION}.amazonaws.com/${IMAGE_NAME}:latest
+
+                    # Push both tags
+                    docker push ${ACCOUNT_ID}.dkr.ecr.${REGION}.amazonaws.com/${IMAGE_NAME}:${BUILD_NUMBER}
+                    docker push ${ACCOUNT_ID}.dkr.ecr.${REGION}.amazonaws.com/${IMAGE_NAME}:latest
+                    """
+                },env.MAX_RETRIES.toInteger(), env.DELAY_RETRIES.toInteger())
+            }
+        }
+
+       stage("Deploy to EC2") {
+    steps {
+        script {
+            def region = env.REGION
+            def asgName = env.ASG_NAME
+
+            def currentCapacity = sh(script: """
+                aws autoscaling describe-auto-scaling-groups \
+                  --auto-scaling-group-names ${asgName} \
+                  --query 'AutoScalingGroups[0].DesiredCapacity' \
+                  --output text \
+                  --region ${region}
+            """, returnStdout: true).trim().toInteger()
+
+            echo "Current ASG capacity: ${currentCapacity}"
+
+            if (currentCapacity == 0) {
+                echo "First deployment — scaling up ASG to 2..."
+                sh """
+                aws autoscaling set-desired-capacity \
+                  --auto-scaling-group-name ${asgName} \
+                  --desired-capacity 2 \
+                  --region ${region}
+                """
+            } else {
+                echo "Rolling update — starting instance refresh..."
+                sh """
+                aws autoscaling start-instance-refresh \
+                  --auto-scaling-group-name ${asgName} \
+                  --strategy Rolling \
+                  --preferences '{"MinHealthyPercentage": 50, "InstanceWarmup": 120}' \
+                  --region ${region}
+                """
+
+
+                timeout(time: 15, unit: 'MINUTES') {
+                    waitUntil(initialRecurrencePeriod: 30000) {
+                        def refreshStatus = sh(script: """
+                            aws autoscaling describe-instance-refreshes \
+                              --auto-scaling-group-name ${asgName} \
+                              --region ${region} \
+                              --query 'InstanceRefreshes[0].Status' \
+                              --output text
+                        """, returnStdout: true).trim()
+
+                        echo "Instance refresh status: ${refreshStatus}"
+
+                        if (refreshStatus == "Failed" || refreshStatus == "Cancelled") {
+                            error("Instance refresh ${refreshStatus} — deployment aborted")
+                        }
+
+                        return refreshStatus == "Successful"
+                    }
+                }
+            }
+        }
+
+        stage("cleanup") {
+            steps {
+                sh """
+                # Clean up dangling Docker images
+                docker image prune -f
+                """
+            }
+        }
+
+        stage("verify deployment") {
             steps {
                 script {
-                    timeout(time: 10, unit: 'MINUTES') {
+                    timeout(time: 15, unit: 'MINUTES') {
                         waitUntil {
-                            def healthy = sh(script: """
+                            def healthyCount = sh(script: """
                                 aws autoscaling describe-auto-scaling-groups \
                                   --auto-scaling-group-names ${ASG_NAME} \
                                   --region ${REGION} \
@@ -193,7 +234,7 @@ pipeline {
                                   --output text | wc -w
                             """, returnStdout: true).trim().toInteger()
 
-                            def desired = sh(script: """
+                            def desiredCapacity = sh(script: """
                                 aws autoscaling describe-auto-scaling-groups \
                                   --auto-scaling-group-names ${ASG_NAME} \
                                   --region ${REGION} \
@@ -201,36 +242,43 @@ pipeline {
                                   --output text
                             """, returnStdout: true).trim().toInteger()
 
-                            echo "Healthy instances: ${healthy}/${desired}"
-                            return healthy == desired && desired > 0
+                            echo "Healthy instances: ${healthyCount}/${desiredCapacity}"
+                            return healthyCount == desiredCapacity
                         }
                     }
-                    echo "✅ Deployment completed successfully!"
-                }
-            }
-        }
 
-        stage("Cleanup") {
-            steps {
-                sh "docker image prune -f || true"
+                    echo "All instances are healthy! Deployment successful."
+                }
             }
         }
     }
 
     post {
         success {
-            echo "Pipeline completed successfully!"
+            echo "Pipeline completed successfully! Application deployed to EC2 Auto Scaling Group."
             emailext(
                 subject: "SUCCESS: ${env.JOB_NAME} #${env.BUILD_NUMBER}",
-                body: "Deployment successful!\nJob: ${env.JOB_NAME}\nBuild: #${env.BUILD_NUMBER}\nURL: ${env.BUILD_URL}",
+                body: """
+                Project deployed successfully!
+
+                Job:      ${env.JOB_NAME}
+                Build:    #${env.BUILD_NUMBER}
+                URL:      ${env.BUILD_URL}
+                """,
                 to: "kujurnikhil0007@gmail.com"
             )
         }
         failure {
-            echo "Pipeline failed!"
+            echo "Pipeline failed! Check the logs for details."
             emailext(
                 subject: "FAILURE: ${env.JOB_NAME} #${env.BUILD_NUMBER}",
-                body: "Deployment failed!\nJob: ${env.JOB_NAME}\nBuild: #${env.BUILD_NUMBER}\nURL: ${env.BUILD_URL}",
+                body: """
+                Failed to deploy application!
+
+                Job:   ${env.JOB_NAME}
+                Build: #${env.BUILD_NUMBER}
+                URL:   ${env.BUILD_URL}
+                """,
                 to: "kujurnikhil0007@gmail.com"
             )
         }
